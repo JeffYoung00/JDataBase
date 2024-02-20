@@ -20,15 +20,14 @@ public class MergeJoinPlan extends JoinPlan{
 
     public MergeJoinPlan(Transaction transaction,Plan leftPlan, Plan rightPlan, String leftJoinFieldName, String rightJoinFieldName, int availableBuffer) {
         super(transaction,leftPlan, rightPlan, leftJoinFieldName, rightJoinFieldName);
-        calculateMaterial();
 
         this.availableBuffer=availableBuffer;
 
-        this.leftRoute=Utils.findRoot(leftPlan.getBlockAccessedNumber(),availableBuffer);
-        this.rightRoute=Utils.findRoot(rightPlan.getBlockAccessedNumber(),availableBuffer);
+        this.leftRoute=Utils.findRoot(leftBlock,availableBuffer);
+        this.rightRoute=Utils.findRoot(rightBlock,availableBuffer);
 
-        this.leftRuns=Utils.calculateRunsByRoot(leftPlan.getBlockAccessedNumber(),availableBuffer);
-        this.rightRuns=Utils.calculateRunsByRoot(rightPlan.getBlockAccessedNumber(),availableBuffer);
+        this.leftRuns=Utils.calculateRunsByRoot(leftBlock,availableBuffer);
+        this.rightRuns=Utils.calculateRunsByRoot(rightBlock,availableBuffer);
     }
 
 

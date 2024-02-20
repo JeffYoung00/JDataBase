@@ -21,8 +21,13 @@ public class IndexInfo {
         this.rootBlockNumber=rootBlockNumber;
     }
 
+    //todo
     public int getGlobalDepth(){
         return -1;
+    }
+
+    public void growGlobalDepth(){
+
     }
 
 }

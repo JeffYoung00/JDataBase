@@ -44,6 +44,10 @@ public class TableScan implements UpdateScan {
         currentSlotNumber=-1;
     }
 
+    public void moveToSlot(int slotNumber){
+        currentSlotNumber=slotNumber;
+    }
+
     public void moveToNewBlock(){
         BlockId blockId=transaction.appendNewFileBlock(fileName);
         moveToBlock(blockId.getBlockNumber());
@@ -62,10 +66,10 @@ public class TableScan implements UpdateScan {
     //迭代器
     @Override
     public boolean hasNext() {
-        currentSlotNumber=recordPage.findSlotAfter(currentSlotNumber,RecordPage.USED);
+        currentSlotNumber=recordPage.findUsedSlotAfter(currentSlotNumber);
         while(currentSlotNumber==-1&&recordPage.getBlockNumber()!=transaction.fileBlockLen(fileName)-1){
             moveToBlock(recordPage.getBlockNumber()+1);
-            currentSlotNumber=recordPage.findSlotAfter(currentSlotNumber,RecordPage.USED);
+            currentSlotNumber=recordPage.findUsedSlotAfter(currentSlotNumber);
         }
         return currentSlotNumber!=-1;
     }
@@ -92,21 +96,20 @@ public class TableScan implements UpdateScan {
     //遍历表找空位,没有就新增
     @Override
     public void insert() {
-        currentSlotNumber=recordPage.findSlotAfter(currentSlotNumber,RecordPage.EMPTY);
+        currentSlotNumber=recordPage.setUsed();
         while(currentSlotNumber==-1){
             if(recordPage.getBlockNumber()!=transaction.fileBlockLen(fileName)-1){
                 moveToBlock(recordPage.getBlockNumber()+1);
             }else{
                 moveToNewBlock();
             }
-            currentSlotNumber=recordPage.findSlotAfter(currentSlotNumber,RecordPage.EMPTY);
+            currentSlotNumber=recordPage.setUsed();
         }
-        recordPage.setUsed(currentSlotNumber,true);
     }
 
     @Override
     public void delete() {
-        recordPage.setEmpty(currentSlotNumber,true);
+        recordPage.setEmpty(currentSlotNumber);
     }
 
     public void getRecordByte(byte[] bytes){

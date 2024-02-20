@@ -16,7 +16,6 @@ public class HashJoinPlan extends JoinPlan{
 
     public HashJoinPlan(Transaction transaction,Plan leftPlan, Plan rightPlan, String leftJoinFieldName, String rightJoinFieldName, int availableBuffer){
         super(transaction,leftPlan,rightPlan,leftJoinFieldName,rightJoinFieldName);
-        calculateMaterial();
         compareAndSwapRight();
 
         this.availableBuffer=availableBuffer;

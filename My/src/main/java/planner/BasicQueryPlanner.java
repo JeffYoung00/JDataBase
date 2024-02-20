@@ -9,6 +9,9 @@ import transaction.Transaction;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * tableScan->productScan->select->project
+ */
 public class BasicQueryPlanner implements QueryPlanner{
 
     private MetadataManager metadataManager;

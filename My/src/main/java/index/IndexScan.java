@@ -4,6 +4,7 @@ import predicate.Constant;
 import record.RecordId;
 
 public interface IndexScan {
+    //找目标数据
     void beforeFirst(Constant<?>key);
     boolean hasNext();
     RecordId getRecordId();

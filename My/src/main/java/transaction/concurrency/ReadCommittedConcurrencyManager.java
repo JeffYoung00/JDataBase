@@ -42,7 +42,7 @@ public class ReadCommittedConcurrencyManager implements Concurrency{
             sLocks.add(blockId);
             return;
         }
-        Concurrency.lockTable.sLock(blockId);
+        Concurrency.lockTable.sLock(blockId,transactionId);
         sLocks.add(blockId);
     }
 
@@ -52,7 +52,7 @@ public class ReadCommittedConcurrencyManager implements Concurrency{
             return;
         }
         if(!sLocks.contains(blockId)){
-            Concurrency.lockTable.sLock(blockId);
+            Concurrency.lockTable.sLock(blockId,transactionId);
         }
         Concurrency.lockTable.xLock(blockId,transactionId);
         xLocks.add(blockId);
@@ -61,10 +61,10 @@ public class ReadCommittedConcurrencyManager implements Concurrency{
     @Override
     public void releaseAll() {
         for(BlockId blockId:xLocks){
-            Concurrency.lockTable.unLock(blockId);
+            Concurrency.lockTable.unLock(blockId,transactionId);
         }
         for(BlockId blockId:sLocks){
-            Concurrency.lockTable.unLock(blockId);
+            Concurrency.lockTable.unLock(blockId,transactionId);
         }
     }
 }

@@ -34,7 +34,6 @@ public class BasicUpdatePlanner implements UpdatePlanner{
         this.transaction=transaction;
     }
 
-
     @Override
     public int executeInsert(InsertData insertData) {
         indexInfos = metadataManager.getTableIndexInfos(insertData.getTableName());

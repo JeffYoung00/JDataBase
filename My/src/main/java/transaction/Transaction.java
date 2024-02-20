@@ -224,5 +224,20 @@ public class Transaction {
         int oldValue=page.getInt(offset);
         page.setOriginBytes(offset,bytes);
     }
+
+    /**
+     * 为了解决b+树的死锁问题
+     */
+    private ArrayList<BlockId> bPlusXLock=new ArrayList<>();
+    public void xLockForBPlusTree(BlockId blockId){
+        bPlusXLock.add(blockId);
+        concurrency.xLock(blockId);
+    }
+    public void releaseXLockForBPlusTree(){
+        for(BlockId b:bPlusXLock){
+            Concurrency.lockTable.unLock(b,transactionId);
+            Concurrency.lockTable.sLock(b,transactionId);
+        }
+    }
 }
 

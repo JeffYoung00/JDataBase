@@ -8,7 +8,8 @@ import scan.Scan;
 import transaction.Transaction;
 
 /**
- * 尽量lazy
+ * hash右表作为驱动表,merge随意,更小;index索引表作为右表
+ * 认为小表是满射
  */
 public abstract class JoinPlan implements Plan{
 
@@ -34,10 +35,14 @@ public abstract class JoinPlan implements Plan{
         this.schema=new Schema();
         schema.addAllFieldsIn(leftPlan.getSchema());
         schema.addAllFieldsIn(rightPlan.getSchema());
+
+        calculateMaterial();
     }
 
+    /**
+     * 计算,如果materialize之后,左右的Block()
+     */
     protected void calculateMaterial(){
-        //计算,如果materialize之后,左右的Block()
         int leftRPB = RecordPage.recordPerBlock(leftPlan.getSchema());
         int rightRPB= RecordPage.recordPerBlock(rightPlan.getSchema());
         leftBlock= leftPlan.getRecordNumber()/leftRPB;
@@ -45,8 +50,10 @@ public abstract class JoinPlan implements Plan{
     }
 
 
+    /**
+     * 如果左边更小,交换左右
+     */
     protected void compareAndSwapRight(){
-        //如果左边更小,交换左右
         if(leftBlock<rightBlock){
             Plan temp=leftPlan;
             leftPlan=rightPlan;
@@ -62,13 +69,6 @@ public abstract class JoinPlan implements Plan{
         }
     }
 
-    @Override
-    public abstract Scan open() ;
-
-    //
-    @Override
-    public abstract int getBlockAccessedNumber() ;
-
     /**
      * 假设满射,小表中的数据有1/max(V1,V2)的概率成功映射
      * 即总record数/max(V1,V2)
@@ -79,21 +79,19 @@ public abstract class JoinPlan implements Plan{
                 Math.max(leftPlan.getFieldDistinctValues(leftJoinFieldName),rightPlan.getFieldDistinctValues(rightJoinFieldName));
     }
 
-    //todo 0
-
     /**
      * 更大的一方distinct value会减少,只有部分被映射
      */
     @Override
     public int getFieldDistinctValues(String fieldName) {
-        int leftSize=leftPlan.getFieldDistinctValues(leftJoinFieldName);
-        int rightSize=rightPlan.getFieldDistinctValues(rightJoinFieldName);
+        double leftSize=leftPlan.getFieldDistinctValues(leftJoinFieldName);
+        double rightSize=rightPlan.getFieldDistinctValues(rightJoinFieldName);
         boolean leftBigger=leftSize>rightSize;
-        int rate=leftBigger?leftSize/rightSize:rightSize/leftSize;
+        double rate=leftBigger?leftSize/rightSize:rightSize/leftSize;
 
         if(leftPlan.getSchema().hasField(fieldName)){
             if(leftBigger){
-                return leftPlan.getFieldDistinctValues(fieldName)/rate;
+                return (int)(leftPlan.getFieldDistinctValues(fieldName)/rate);
             }else{
                 return leftPlan.getFieldDistinctValues(fieldName);
             }
@@ -101,9 +99,8 @@ public abstract class JoinPlan implements Plan{
             if(leftBigger){
                 return rightPlan.getFieldDistinctValues(fieldName);
             }else{
-                return rightPlan.getFieldDistinctValues(fieldName)/rate;
+                return (int)(rightPlan.getFieldDistinctValues(fieldName)/rate);
             }
-
         }
     }
 

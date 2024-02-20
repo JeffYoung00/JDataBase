@@ -35,7 +35,7 @@ public class IndexJoinPlan extends JoinPlan{
     @Override
     public int getBlockAccessedNumber() {
         return leftPlan.getBlockAccessedNumber()
-                +leftPlan.getRecordNumber()* rightPlan.getFieldDistinctValues(indexInfo.getField().getName()) *indexInfo.getIndexHeight()
+                +leftPlan.getRecordNumber()*indexInfo.getIndexHeight()
                 +getRecordNumber();
     }
 

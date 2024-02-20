@@ -18,7 +18,7 @@ public class ReadRepeatableConcurrencyManager implements Concurrency{
     public void sLock(BlockId blockId){
         Boolean lock=transactionLockTable.get(blockId);
         if(lock==null){
-            Concurrency.lockTable.sLock(blockId);
+            Concurrency.lockTable.sLock(blockId,transactionId);
             transactionLockTable.put(blockId,false);
         }
     }
@@ -36,7 +36,7 @@ public class ReadRepeatableConcurrencyManager implements Concurrency{
 
     public void releaseAll(){
         for(BlockId blockId:transactionLockTable.keySet()){
-            Concurrency.lockTable.unLock(blockId);
+            Concurrency.lockTable.unLock(blockId,transactionId);
         }
     }
 }

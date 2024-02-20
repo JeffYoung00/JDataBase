@@ -46,10 +46,10 @@ public class ChunkScan implements Scan {
     @Override
     public boolean hasNext() {
         RecordPage recordPage=recordPages.get(currentBlockNumber-startBlockNumber);
-        currentSlotNumber=recordPage.findSlotAfter(currentSlotNumber,RecordPage.USED);
+        currentSlotNumber=recordPage.findUsedSlotAfter(currentSlotNumber);
         while(currentSlotNumber==-1&&recordPage.getBlockNumber()!=endBlockNumber-1){
             moveToBlock(recordPage.getBlockNumber()+1);
-            currentSlotNumber=recordPage.findSlotAfter(currentSlotNumber,RecordPage.USED);
+            currentSlotNumber=recordPage.findUsedSlotAfter(currentSlotNumber);
         }
         return currentSlotNumber!=-1;
     }

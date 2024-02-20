@@ -41,7 +41,7 @@ public class HeuristicQueryPlanner implements QueryPlanner{
             currentPlan = getLeastRecordsPlan();
         }
         if(empty){
-            currentPlan=new SelectPlan(currentPlan,Predicate.emptyPredicate);
+            currentPlan = new SelectPlan(currentPlan,Predicate.emptyPredicate);
         }
 
         //不断join

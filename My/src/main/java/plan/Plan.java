@@ -1,25 +1,24 @@
 package plan;
 
-
 import record.Schema;
 import scan.Scan;
 
-/**
- * The interface implemented by each query plan.
- * There is a Plan class for each relational algebra operator.
- * @author Edward Sciore
- *
- */
 public interface Plan {
 
     Scan open();
 
-    int    getBlockAccessedNumber();
+    /**
+     * 一次遍历需要访问多少个块
+     */
+    int getBlockAccessedNumber();
 
-    int    getRecordNumber();
+    int getRecordNumber();
 
-    int    getFieldDistinctValues(String fieldName);
+    int getFieldDistinctValues(String fieldName);
 
+    /**
+     * 整个操作的预先花销
+     **/
     int cost();
 
     Schema getSchema();

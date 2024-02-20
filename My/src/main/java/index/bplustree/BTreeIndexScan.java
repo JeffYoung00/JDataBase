@@ -8,13 +8,11 @@ import record.Layout;
 import record.RecordId;
 import record.TableScan;
 import server.Database;
-import server.DatabaseException;
 import transaction.Transaction;
 
 import java.util.List;
 
 public class BTreeIndexScan implements IndexScan {
-
 
     TableScan tableScan;
     IndexInfo indexInfo;
@@ -25,18 +23,12 @@ public class BTreeIndexScan implements IndexScan {
     int order;
     Node root;
 
-    //
     Constant<?> key;
+    //查询得到的结果
     List<Integer> lastSearch;
     int lastSearchPos;
 
-    int previousBlock=0;
-
-
-
     public BTreeIndexScan(Transaction transaction, IndexInfo indexInfo, TableScan tableScan){
-
-
         this.fileName=indexInfo.getIndexName()+Database.bTreeIndexPostfix;
         this.indexLayout=Node.indexLayout(indexInfo.getField());
         this.order=Node.calculateOrder(indexLayout);
@@ -51,7 +43,7 @@ public class BTreeIndexScan implements IndexScan {
             BlockId firstBlock=transaction.appendNewFileBlock(fileName);
             root=new LeafNode(indexLayout,order,transaction,firstBlock,Node.End_Block,Node.End_Block);
         }else{
-            root=Node.createNode(indexLayout,order,transaction,new BlockId(fileName, indexInfo.getRootBlockNumber()));
+            root=Node.initNode(indexLayout,order,transaction,new BlockId(fileName, indexInfo.getRootBlockNumber()));
         }
     }
 
@@ -60,8 +52,6 @@ public class BTreeIndexScan implements IndexScan {
     public void beforeFirst(Constant<?> key) {
         this.key=key;
         this.lastSearch=root.findAll(key);
-        //排序,防止一个block中有多个相同key,每次都只找到第一个key
-        this.lastSearch.sort((a,b)->a-b);
         this.lastSearchPos=0;
     }
 
@@ -70,17 +60,9 @@ public class BTreeIndexScan implements IndexScan {
         if(lastSearchPos>=lastSearch.size()){
             return false;
         }
-        int nextBlock=lastSearch.get(lastSearchPos);
-        if(nextBlock!=previousBlock){
-            previousBlock=nextBlock;
-            tableScan.moveToBlock(nextBlock);
-        }
-        while(tableScan.hasNext()){
-            if(tableScan.getValue(indexInfo.getField().getName()).equals(key)){
-                return true;
-            }
-        }
-        throw new DatabaseException("index error, equal key not found through index");
+        tableScan.moveToBlock(lastSearch.get(lastSearchPos++));
+        tableScan.moveToSlot(lastSearch.get(lastSearchPos++));
+        return true;
     }
 
     @Override
@@ -96,17 +78,13 @@ public class BTreeIndexScan implements IndexScan {
 
     @Override
     public void insert(Constant<?> value, RecordId recordId) {
-        KeyNodePair keyNodePair =root.insert(key,recordId.getBlockNumber());
+        KeyNodePair keyNodePair =root.insert(key,recordId.getBlockNumber(),recordId.getSlot());
         if(keyNodePair==null){
             return;
         }
         BlockId newBlockId=transaction.appendNewFileBlock(fileName);
-
-        DirectoryNode newRoot=new DirectoryNode(indexLayout,order,transaction,newBlockId);
-
-        newRoot.setKey(0,keyNodePair.getKey());
-        newRoot.setBlockNumber(0,indexInfo.getRootBlockNumber());
-        newRoot.setBlockNumber(1,keyNodePair.getBlockNumber());
+        DirectoryNode newRoot=new DirectoryNode(indexLayout,order,transaction,newBlockId,keyNodePair.getFirstBlockNumber(),
+                indexInfo.getRootBlockNumber());
 
         //todo 修改写入metadata
         indexInfo.setRootBlockNumber(newBlockId.getBlockNumber());
@@ -114,15 +92,13 @@ public class BTreeIndexScan implements IndexScan {
 
         //close
         root.close();
-
         root=newRoot;
     }
 
     @Override
     public void delete(Constant<?>key,RecordId recordId) {
-        root.remove(key,recordId.getBlockNumber());
+        root.remove(key,recordId.getBlockNumber(),recordId.getSlot());
     }
-
 
     @Override
     public Constant<?> getValue(String fieldName) {
@@ -133,6 +109,4 @@ public class BTreeIndexScan implements IndexScan {
     public boolean hasField(String fieldName) {
         return tableScan.hasField(fieldName);
     }
-
-
 }

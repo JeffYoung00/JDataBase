@@ -2,12 +2,7 @@ package transaction.concurrency;
 
 import file.BlockId;
 
-import java.lang.annotation.Retention;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.*;
 
 public class LockTable {
 
@@ -24,20 +19,32 @@ public class LockTable {
         return ret;
     }
 
-    public synchronized void sLock(BlockId blockId){
+    public synchronized ArrayList<Integer> getTxs(BlockId blockId){
+        ReadWriteLock lock=lockMap.get(blockId);
+        return lock==null?null:lock.getTxs();
+    }
+
+    public synchronized void sLock(BlockId blockId,int transactionId){
         ReadWriteLock lock=getLock(blockId);
         synchronized (lock){
             try {
                 long timeStamp=System.currentTimeMillis();
+                if(lock.hasXLock()){
+                    if(!Concurrency.waitForGraph.put(transactionId,blockId)){
+                        throw new DeadLockException();
+                    }
+                    lock.wait();
+                }
                 while(lock.hasXLock() &&System.currentTimeMillis()-timeStamp<=MAX_WAIT_TIME){
                     lock.wait();
                 }
                 if(lock.hasXLock()){
-                    throw new NoAvailableLockException();
+                    throw new DeadLockException();
                 }
-                lock.sLock();
+                lock.sLock(transactionId);
+                Concurrency.waitForGraph.remove(transactionId);
             }catch (InterruptedException e){
-                throw new NoAvailableLockException();
+                throw new DeadLockException();
             }
         }
     }
@@ -49,23 +56,30 @@ public class LockTable {
         synchronized (lock){
             try {
                 long timeStamp=System.currentTimeMillis();
+                if(lock.hasOtherLock()){
+                    if(!Concurrency.waitForGraph.put(transactionId,blockId)){
+                        throw new DeadLockException();
+                    }
+                    lock.wait();
+                }
                 while(lock.hasOtherLock()&&System.currentTimeMillis()-timeStamp<=MAX_WAIT_TIME){
                     lock.wait();
                 }
                 if(lock.hasOtherLock()){
-                    throw new NoAvailableLockException();
+                    throw new DeadLockException();
                 }
-                lock.xLock();
+                lock.xLock(transactionId);
+                Concurrency.waitForGraph.remove(transactionId);
             }catch (InterruptedException e){
-                throw new NoAvailableLockException();
+                throw new DeadLockException();
             }
         }
     }
 
-    public synchronized void unLock(BlockId blockId){
+    public synchronized void unLock(BlockId blockId,int transactionId){
         ReadWriteLock lock=getLock(blockId);
         synchronized (lock){
-            if(lock.releaseALock()){
+            if(lock.releaseALock(transactionId)){
                 lock.notifyAll();
             }
         }
@@ -75,7 +89,13 @@ public class LockTable {
 
         int state=0;//-1表示x lock, 正数表示s lock的数量
 
-        ReadWriteLock(){}
+        ArrayList<Integer> txs;
+
+        ReadWriteLock(){txs=new ArrayList<>();}
+
+        ArrayList<Integer> getTxs(){
+            return new ArrayList<>(txs);
+        }
 
         boolean hasXLock(){
             return state<0;
@@ -85,21 +105,24 @@ public class LockTable {
             return state!=0&&state!=1;
         }
 
-        void sLock(){
+        void sLock(int tx){
             this.state++;
+            txs.add(tx);
         }
 
-        void xLock(){
+        void xLock(int tx){
             this.state=-1;
+            txs.add(tx);
         }
 
         //这个lock上没有了其他的任何事务,需要notify
-        boolean releaseALock(){
+        boolean releaseALock(int tx){
             if(hasXLock()){
                 state=0;
                 return true;
             }
             state--;
+            txs.remove(tx);
             return state==0;
         }
     }

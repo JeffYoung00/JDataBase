@@ -5,9 +5,9 @@ import predicate.Constant;
 
 public class KeyNodePair {
     @Getter private Constant<?> key;
-    @Getter private int blockNumber;
+    @Getter private int firstBlockNumber;
     public KeyNodePair(Constant<?>key,int blockNumber){
         this.key=key;
-        this.blockNumber=blockNumber;
+        this.firstBlockNumber =blockNumber;
     }
 }

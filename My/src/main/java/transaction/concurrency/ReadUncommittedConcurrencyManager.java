@@ -35,7 +35,7 @@ public class ReadUncommittedConcurrencyManager implements Concurrency{
     @Override
     public void releaseAll() {
         for(BlockId blockId:xLocks){
-            Concurrency.lockTable.unLock(blockId);
+            Concurrency.lockTable.unLock(blockId,transactionId);
         }
     }
 }

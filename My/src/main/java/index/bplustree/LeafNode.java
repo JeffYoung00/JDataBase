@@ -4,6 +4,7 @@ import file.BlockId;
 import predicate.Constant;
 import record.Layout;
 import transaction.Transaction;
+import transaction.concurrency.Concurrency;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,9 +15,6 @@ import java.util.List;
 
 public class LeafNode extends Node {
 
-    static int Previous_Offset=8;
-    static int Next_Offset=12;
-
     int previousBlockNumber;
     int nextBlockNumber;
 
@@ -24,108 +22,119 @@ public class LeafNode extends Node {
             Transaction transaction, BlockId blockId){
         super(indexLayout,order,transaction,blockId);
 
-        this.previousBlockNumber=transaction.getInt(blockId,8);
-        this.nextBlockNumber=transaction.getInt(blockId,12);
+        this.previousBlockNumber=transaction.getInt(blockId,previousBlockNumber);
+        this.nextBlockNumber=transaction.getInt(blockId,nextBlockNumber);
     }
 
     //新的block,format
     public LeafNode(Layout indexLayout,int order,
                     Transaction transaction, BlockId blockId,
                     int previousBlockNumber,int nextBlockNumber){
-        super(indexLayout,order,transaction,blockId);
-
-        this.previousBlockNumber=previousBlockNumber;
-        this.nextBlockNumber=nextBlockNumber;
-
+        this(indexLayout,order,transaction,blockId);
+        transaction.setInt(blockId,Leaf_Offset,Leaf_Node,false);
+        transaction.setInt(blockId,Count_Offset,0,false);
+        transaction.setInt(blockId,FEP_Offset,0,false);
+        transaction.setInt(blockId,FRP_Offset,-1,false);
         transaction.setInt(blockId,Previous_Offset,previousBlockNumber,false);
         transaction.setInt(blockId,Next_Offset,nextBlockNumber,false);
-        transaction.setInt(blockId,4,0,false);
-        transaction.setInt(blockId,0,Leaf_Node,false);
+        for(int i=0;i<order;i++){
+            transaction.setInt(blockId,i*calculateFlagOffset(i),i+1,false);
+        }
     }
 
-
     @Override
-    public KeyNodePair insert(Constant<?> key, int blockNumber) {
-
-        //放在<=的后面
-        int index=0;
-        while( getKey(index).compareTo(key)<=0 ){
-            index++;
+    public KeyNodePair insert(Constant<?> key, int blockNumber,int slotNumber) {
+        /**
+         * 死锁避免,有split风险时需要加x锁
+         */
+        if(getCount()==order-1){
+            transaction.xLockForBPlusTree(blockId);
+        }else{
+            transaction.releaseXLockForBPlusTree();
         }
 
-        for(int i=getCount()-1;i>=index;i--){
-            setKey(i+1, getKey(i));
-        }
-        for(int i=getCount()-1;i>=index;i--){
-            setKey(i+1, getKey(i));
+        //第一个点
+        int firstSlot = getFRP();
+
+        //empty或者新key最小,需要更新frp
+        if(firstSlot==Empty||getKey(firstSlot).compareTo(key)>0){
+            //修改frp
+            setFRP(insertNext(Empty,firstSlot,key,blockNumber,slotNumber));
+            return null;
         }
 
-        /**/
-        setCount(getCount()+1);
+        //next是插入点的下一个
+        int prev=firstSlot;
+        int next=getFlag(firstSlot);
+        while(next!=Empty&&getKey(next).compareTo(key)<=0){
+            prev=next;
+            next=getFlag(next);
+        }
+        insertNext(prev,next,key,blockNumber,slotNumber);
 
+        //no split
         if(getCount()!= order){
             return null;
         }
-        //split
-        int midIndex= order /2;
-
-        Constant<?> splitKey= getKey(midIndex);
 
         //修改链表
         BlockId newBlockId=transaction.appendNewFileBlock(blockId.getFileName());
-        LeafNode newNode=new LeafNode(indexLayout,order,transaction,newBlockId,blockId.getBlockNumber(),nextBlockNumber);
-        transaction.setInt(blockId,Next_Offset,newBlockId.getBlockNumber(),true);
-
-        for(int i=0;i<order-midIndex;i++){
-            newNode.setKey(i, getKey(midIndex+i));
-        }
-        for(int i=0;i<order-midIndex;i++){
-            newNode.setKey(i, getKey(midIndex+i));
-        }
-        setCount(midIndex);
+        LeafNode newNode=new LeafNode(indexLayout,order,transaction,newBlockId,previousBlockNumber,blockId.getBlockNumber());
+        setPreviousBlockNumber(newBlockId.getBlockNumber());
+        //split
+        Constant<?>splitKey=split(newNode);
         return new KeyNodePair(splitKey,newBlockId.getBlockNumber());
     }
 
+    //返回 [blockNo slotNo]
     @Override
     public List<Integer> findAll(Constant<?> key) {
         List<Integer> ret=new ArrayList<>();
-        int i=0;
-        while(i<getCount()&& key.compareTo(getKey(i))<0 ){
-            i++;
+        int i=getFRP();
+        while(i!=Empty&& key.compareTo(getKey(i))<0 ){
+            i=getFlag(i);
         }
         //大于所有stored key
-        if(i==getCount()){
+        if(i==Empty){
             return null;
         }
         //加入所有元素
-        while(i<getCount()&&key.equals(getKey(i))){
-            ret.add(i);
-            i++;
+        while(i!=Empty&&key.equals(getKey(i))){
+            ret.add(getBlockNo(i));
+            ret.add(getSlotNo(i));
+            i=getFlag(i);
         }
         //找到leaf的末尾,说明下一个结点也可能有
-        if(i==getCount()){
-            BlockId nextBlock=new BlockId(blockId.getFileName(),blockId.getBlockNumber()+1);
+        if(i==getCount()&&nextBlockNumber!=End_Block){
+            BlockId nextBlock=new BlockId(blockId.getFileName(),nextBlockNumber);
             ret.addAll( new LeafNode(indexLayout,order,transaction,nextBlock).findAll(key) );
         }
         return ret;
     }
 
     @Override
-    public void remove(Constant<?> key, int blockNumber) {
-        int index=0;
-        while(index<getCount()&&key.compareTo(getKey(index))<0){
-            index++;
-        }
-        //没找到
-        if(index==getCount()){
+    public void remove(Constant<?> key, int blockNumber,int slotNumber) {
+        int index=getFRP();
+        if(index==Empty){
             return;
         }
-        //相等就找到,否则没找到
-        if(key.equals(getKey(index))){
-            for(int i=index+1;i<getCount();i++){
-                setKey(i-1, getKey(i));
-                setBlockNumber(i-1,getBlockNumber(i));
-            }
+        //修改frp
+        if(key.compareTo(getKey(index))==0){
+            removeAt(index);
+            setFRP(getFlag(index));
         }
+
+        while(index!=Empty&&key.compareTo(getKey(index))<=0){
+            if(getBlockNo(index)==blockNumber&&getSlotNo(index)==slotNumber){
+                removeAt(index);
+                return;
+            }
+            index=getFlag(index);
+        }
+    }
+
+    void setPreviousBlockNumber(int prev){
+        this.previousBlockNumber=prev;
+        transaction.setInt(blockId,Previous_Offset,prev,true);
     }
 }

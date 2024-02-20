@@ -7,57 +7,65 @@ import transaction.Transaction;
 
 import java.util.List;
 
-//todo 注意close
 public class DirectoryNode extends Node {
 
-    int index;
 
     public DirectoryNode(Layout indexLayout,int order,
                          Transaction transaction, BlockId blockId){
         super(indexLayout,order,transaction,blockId);
     }
 
+    //新的block,format
+    public DirectoryNode(Layout indexLayout,int order,
+                    Transaction transaction, BlockId blockId,
+                    int firstBlockNumber,int finalBlockNumber){
+        this(indexLayout,order,transaction,blockId);
+        transaction.setInt(blockId,Leaf_Offset,Leaf_Node,false);
+        //有一条记录,所以第一个empty是1,count是1
+        transaction.setInt(blockId,Count_Offset,1,false);
+        transaction.setInt(blockId,FEP_Offset,1,false);
+        transaction.setInt(blockId,FRP_Offset,0,false);
+        transaction.setInt(blockId,Final_Offset,finalBlockNumber,false);
+        transaction.setInt(blockId, calculateFlagOffset(0),firstBlockNumber,false);
+        //从1开始
+        for(int i=1;i<order;i++){
+            transaction.setInt(blockId,i*calculateFlagOffset(i),i+1,false);
+        }
+    }
+
+    //这两个字段用于find之后分裂
+    int index;
+    int prev;
     @Override
-    public KeyNodePair insert(Constant<?> key, int blockNumber) {
+    public KeyNodePair insert(Constant<?> key, int blockNumber,int slotNumber) {
+        /**
+         * 死锁避免,有split风险时需要加x锁
+         */
+        if(getCount()==order-1){
+            transaction.xLockForBPlusTree(blockId);
+        }else{
+            transaction.releaseXLockForBPlusTree();
+        }
+
         //第一个node>=key,或者最后一个node
         Node sonNode=findSonNode(key);
-        KeyNodePair keyNodePair=sonNode.insert(key,blockNumber);
+        KeyNodePair keyNodePair=sonNode.insert(key,blockNumber,slotNumber);
 
         sonNode.close();
 
+        //son don't split
         if(keyNodePair==null){
             return null;
         }
-        //son split,注意index和index+1
-        for(int i=getCount()-1;i>=index;i--){
-            setKey(i+1, getKey(i));
-            setBlockNumber(i+2,getBlockNumber(i+1));
-        }
-        setKey(index,keyNodePair.getKey());
-        setBlockNumber(index+1,keyNodePair.getBlockNumber());
-
-        /**/
-        setCount(getCount()+1);
-
+        //dir don't split
+        insertNext(prev,index,key,blockNumber,0);
         if(getCount()!= order){
             return null;
         }
-        //split
-        int midIndex= order /2;
+        //dir split
         BlockId newBlockId=transaction.appendNewFileBlock(blockId.getFileName());
-        DirectoryNode newNode=new DirectoryNode(indexLayout,order,transaction,newBlockId);
-
-        //keys留[0,midIndex),上升split key,分裂[midIndex+1,m)
-        Constant<?> splitKey= getKey(midIndex);
-        for(int i=0;i<order-midIndex-1;i++){
-            newNode.setKey(i, getKey(i+midIndex+1));
-        }
-        for(int i=0;i<order;i++){
-            newNode.setBlockNumber(i,getBlockNumber(i+midIndex+1));
-        }
-
-        newNode.close();
-        setCount(midIndex);
+        DirectoryNode newNode=new DirectoryNode(indexLayout,order,transaction,newBlockId,keyNodePair.getFirstBlockNumber(),sonNode.blockId.getBlockNumber());
+        Constant<?>splitKey=split(newNode);
         return new KeyNodePair(splitKey,newBlockId.getBlockNumber());
     }
 
@@ -70,18 +78,20 @@ public class DirectoryNode extends Node {
     }
 
     @Override
-    public void remove(Constant<?> key, int blockNumber) {
+    public void remove(Constant<?> key, int blockNumber,int slotNumber) {
         Node sonNode=findSonNode(key);
-        sonNode.remove(key,blockNumber);
+        sonNode.remove(key,blockNumber,slotNumber);
         sonNode.close();
     }
 
     private Node findSonNode(Constant<?>key){
-        index=0;
-        while(index<getCount()&& getKey(index).compareTo(key)<0){
-            index++;
+        prev=Empty;
+        index=getFRP();
+        while(index!=Empty && getKey(index).compareTo(key)<0){
+            prev=index;
+            index=getFlag(index);
         }
-        BlockId sonBlock=new BlockId(blockId.getFileName(),getBlockNumber(index));
-        return Node.createNode(indexLayout,order,transaction,sonBlock);
+        BlockId sonBlock=new BlockId(blockId.getFileName(), getFlag(index));
+        return Node.initNode(indexLayout,order,transaction,sonBlock);
     }
 }
